@@ -1,439 +1,83 @@
 <!DOCTYPE html>
-<html lang="en">
+<html style="width:100%;height:100%;background-color:black;">
 <head>
-  <meta charset="UTF-8">
-  <title>99 Nights: Forest Survival </title>
-  <style>
-    html, body {
-      height: 100%;
-      margin: 0;
-      padding: 0;
-      overflow: hidden;
-      background: #222;
-      color: #eee;
-      font-family: sans-serif;
-    }
-    #ui {
-      position: absolute;
-      top: 0; left: 0; right: 0;
-      text-align: center;
-      z-index: 10;
-      pointer-events: none;
-      user-select: none;
-      background: rgba(34,34,34,0.75);
-      padding: 8px 0 2px 0;
-    }
-    #status, #log {
-      pointer-events: all;
-    }
-    #restartBtn {
-      pointer-events: all;
-      padding: 8px 16px;
-      margin: 8px;
-      border-radius: 5px;
-      background: #4caf50;
-      color: #fff;
-      border: none;
-      font-size: 1em;
-    }
-    #restartBtn:disabled { background: #444; }
-    #fireLevelBarContainer {
-      width: 40vw;
-      min-width: 200px;
-      max-width: 500px;
-      height: 18px;
-      margin: 8px auto 4px auto;
-      background: #444;
-      border-radius: 10px;
-      overflow: hidden;
-      display: flex;
-      align-items: center;
-      box-shadow: 0 2px 8px #111a;
-    }
-    #fireLevelBar {
-      height: 100%;
-      background: linear-gradient(90deg, #ffecb3, #ff9800, #ff5722 80%);
-      transition: width 0.3s;
-    }
-    #fireLevelText {
-      position: absolute;
-      left: 0; right: 0;
-      text-align: center;
-      pointer-events: none;
-      font-size: 1em;
-      color: #fff;
-      font-weight: bold;
-      margin-top: -2px;
-      text-shadow: 0 1px 4px #222,0 1px 0 #000;
-      user-select: none;
-    }
-  </style>
-</head>
-<body>
-<div id="ui">
-  <h2 style="margin:0;font-size:1.2em;">99 Nights: Forest Survival (Auto Day/Night, Fullscreen, Fire Expands Map)</h2>
-  <div id="status"></div>
-  <div id="fireLevelBarContainer">
-    <div id="fireLevelBar" style="width:0%"></div>
-    <div id="fireLevelText"></div>
-  </div>
-  <div id="log"></div>
-  <button id="restartBtn" style="display:none">Restart</button>
-  <div>
-    <small>Move: Arrow Keys (hold) | Gather: Space | Fuel Fire: Space near fire</small>
-  </div>
-</div>
-<canvas id="game"></canvas>
-<script>
-const PHASE_DURATION_MS = 30000;
+    
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
 
-// Leveling and map expansion
-const initialMapW = 15, initialMapH = 10;
-const mapGrowW = 2, mapGrowH = 1;
-const initialFireMaxFuel = 20;
-const fireBurnRateNight = 0.0010;
-const fireBurnRateDay = 0.0015;
-const fireLevelMax = 100;
-
-let tileSize, mapW, mapH, firePos, fireRadius;
-function recalcMap() {
-  // Fill screen, keep aspect ratio
-  const w = window.innerWidth;
-  const h = window.innerHeight;
-  tileSize = Math.floor(Math.min(w / mapW, h / mapH));
-  firePos = { x: Math.floor(mapW/2), y: Math.floor(mapH/2) };
-  fireRadius = Math.floor(tileSize * 0.5);
-  canvas.width = w;
-  canvas.height = h;
-}
-window.addEventListener('resize', ()=>{
-  recalcMap();
-  repositionPlayerAndResources();
-});
-
-const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
-
-// State separated from map layout
-let state;
-function createInitialState() {
-  mapW = initialMapW;
-  mapH = initialMapH;
-  recalcMap();
-  return {
-    phase: "day",
-    night: 1,
-    maxNights: 99,
-    health: 10,
-    wood: 2,
-    food: 2,
-    fireFuel: 6,
-    fireMaxFuel: initialFireMaxFuel,
-    log: "Survive for 99 nights! Gather wood to fuel your fire.",
-    alive: true,
-    player: {
-      x: firePos.x * tileSize + tileSize/2,
-      y: (firePos.y+2) * tileSize + tileSize/2,
-      speed: Math.max(3, tileSize/8),
-    },
-    resources: [],
-    keys: {},
-    fireActive: false,
-    nightTimer: 0,
-    phaseInterval: null,
-    phaseTicks: 0,
-    fireLevel: 0,
-    fireLevelUps: 0,
-    fireLevelCarry: 0,
-  };
-}
-
-function repositionPlayerAndResources() {
-  if (!state) return;
-  state.player.x = Math.max(tileSize/2, Math.min(state.player.x, mapW*tileSize-tileSize/2));
-  state.player.y = Math.max(tileSize/2, Math.min(state.player.y, mapH*tileSize-tileSize/2));
-  state.resources = state.resources.filter(r =>
-    r.x>=0 && r.x<mapW && r.y>=0 && r.y<mapH &&
-    !(r.x===firePos.x && r.y===firePos.y)
-  );
-}
-
-function render() {
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  ctx.fillStyle = state.phase == "day" ? "#325b2c" : "#1c2a1c";
-  ctx.fillRect(0,0,canvas.width,canvas.height);
-
-  for (const res of state.resources) {
-    if(res.type==="wood") ctx.fillStyle = "#b28d53";
-    else ctx.fillStyle = "#daed83";
-    ctx.beginPath();
-    ctx.arc(res.x*tileSize+tileSize/2, res.y*tileSize+tileSize/2, Math.max(12, tileSize*0.35), 0, 2*Math.PI);
-    ctx.fill();
-    ctx.strokeStyle = "#555";
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    ctx.font = `${Math.floor(tileSize/2)}px serif`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillStyle = "#222";
-    ctx.fillText(res.type==="wood"?"🪵":"🍄", res.x*tileSize+tileSize/2, res.y*tileSize+tileSize/2);
-  }
-
-  // Fire
-  ctx.save();
-  ctx.shadowColor = "#ffcf80";
-  ctx.shadowBlur = 20;
-  ctx.beginPath();
-  ctx.arc(firePos.x*tileSize+tileSize/2, firePos.y*tileSize+tileSize/2, fireRadius, 0, 2*Math.PI);
-  ctx.fillStyle = "#ffaa33";
-  ctx.globalAlpha = Math.max(0.3, Math.min(1, state.fireFuel/state.fireMaxFuel));
-  ctx.fill();
-  ctx.globalAlpha = 1;
-  ctx.shadowBlur = 0;
-  ctx.restore();
-
-  ctx.font = `${Math.floor(tileSize * 0.8)}px serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText("🔥", firePos.x*tileSize+tileSize/2, firePos.y*tileSize+tileSize/2-2);
-
-  // Draw player (yellow circle behind face, always yellow)
-  let px = state.player.x, py = state.player.y;
-  let playerRadius = tileSize*0.5;
-  ctx.beginPath();
-  ctx.arc(px, py, playerRadius, 0, 2*Math.PI);
-  ctx.fillStyle = "#ffff55";
-  ctx.fill();
-  ctx.font = `${Math.floor(playerRadius*1.5)}px serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillStyle = "#000";
-  ctx.fillText(".‿.", px, py);
-
-  ctx.font = `bold ${Math.floor(tileSize*0.35)}px sans-serif`;
-  ctx.fillStyle = "#000";
-  ctx.fillText("You", px, py + Math.max(18, tileSize*0.55));
-
-  // Tip if at fire
-  if (Math.abs(px - (firePos.x*tileSize+tileSize/2)) < tileSize*0.8 && Math.abs(py - (firePos.y*tileSize+tileSize/2)) < tileSize*0.8) {
-    ctx.font = `${Math.floor(tileSize*0.3)}px sans-serif`;
-    ctx.fillStyle = "#fff";
-    ctx.fillText("Press SPACE to fuel fire", px, py - tileSize*0.7);
-  }
-
-  if (state.phase === "night") {
-    ctx.globalAlpha = 0.4;
-    ctx.fillStyle = "#000";
-    ctx.fillRect(0,0,canvas.width,canvas.height);
-    ctx.globalAlpha = 1;
-  }
-}
-
-function renderFireLevelBar() {
-  const percent = Math.min(100, (state.fireLevel / fireLevelMax) * 100);
-  const bar = document.getElementById("fireLevelBar");
-  bar.style.width = percent + "%";
-  let msg = `Fire Level: ${Math.floor(percent)}%`;
-  if (state.fireLevelUps > 0) msg += ` &nbsp;|&nbsp; Map Expanded: <b>${state.fireLevelUps}</b>x`;
-  document.getElementById("fireLevelText").innerHTML = msg;
-}
-
-function renderUI() {
-  document.getElementById("status").innerHTML = `
-    <b>Night:</b> ${state.night} / ${state.maxNights} | 
-    <b>Phase:</b> ${state.phase.toUpperCase()}<br>
-    <b>Health:</b> <span style="color:${state.health<4?'#ff8888':'#aaffaa'}">${state.health}</span> / 10 &nbsp;|&nbsp;
-    <b>Wood:</b> ${state.wood} &nbsp;|&nbsp;
-    <b>Food:</b> ${state.food} &nbsp;|&nbsp;
-    <b>Fire Fuel:</b> <span style="color:${state.fireFuel<3?'#ffb347':'#fff'}">${state.fireFuel.toFixed(1)}</span> / ${state.fireMaxFuel}
-  `;
-  document.getElementById("log").innerHTML = state.log;
-  document.getElementById("restartBtn").style.display = state.alive ? "none" : "";
-  renderFireLevelBar();
-}
-
-function spawnResources() {
-  state.resources = [];
-  let spots = [];
-  for(let y=1;y<mapH-1;y++)
-    for(let x=1;x<mapW-1;x++)
-      if(!(x===firePos.x && y===firePos.y)) spots.push({x,y});
-  for(let i=0;i<Math.max(5, Math.floor(mapW*mapH/30));i++) {
-    let idx = Math.floor(Math.random()*spots.length);
-    let s = spots.splice(idx,1)[0];
-    state.resources.push({...s, type: "wood"});
-  }
-  for(let i=0;i<Math.max(3, Math.floor(mapW*mapH/45));i++) {
-    let idx = Math.floor(Math.random()*spots.length);
-    let s = spots.splice(idx,1)[0];
-    state.resources.push({...s, type: "food"});
-  }
-}
-
-function updatePlayer() {
-  if (!state.alive) return;
-  let moveX = 0, moveY = 0;
-  if (state.keys["ArrowLeft"]) moveX -= 1;
-  if (state.keys["ArrowRight"]) moveX += 1;
-  if (state.keys["ArrowUp"]) moveY -= 1;
-  if (state.keys["ArrowDown"]) moveY += 1;
-  if (moveX !== 0 && moveY !== 0) {
-    moveX *= Math.SQRT1_2;
-    moveY *= Math.SQRT1_2;
-  }
-  let nx = state.player.x + moveX * state.player.speed;
-  let ny = state.player.y + moveY * state.player.speed;
-  nx = Math.max(tileSize/2, Math.min(nx, mapW*tileSize - tileSize/2));
-  ny = Math.max(tileSize/2, Math.min(ny, mapH*tileSize - tileSize/2));
-  state.player.x = nx;
-  state.player.y = ny;
-}
-
-window.addEventListener("keydown", function(e){
-  state.keys[e.key] = true;
-  if(!state.alive) return;
-  if (e.key === " " && !e.repeat) {
-    let px = state.player.x, py = state.player.y;
-    for(let i=0;i<state.resources.length;i++) {
-      let res = state.resources[i];
-      let rx = res.x*tileSize+tileSize/2, ry = res.y*tileSize+tileSize/2;
-      if(Math.abs(px - rx) < Math.max(18, tileSize*0.4) && Math.abs(py - ry) < Math.max(18, tileSize*0.4)) {
-        if(res.type==="wood") { state.wood++; state.log="You gathered wood!"; }
-        else { state.food++; state.log="You foraged food!"; }
-        state.resources.splice(i,1);
-        renderUI();
-        return;
-      }
-    }
-    let fx = firePos.x*tileSize+tileSize/2, fy = firePos.y*tileSize+tileSize/2;
-    if(Math.abs(px - fx) < tileSize*0.8 && Math.abs(py - fy) < tileSize*0.8) {
-      if(state.wood > 0 && state.fireFuel < state.fireMaxFuel) {
-        let add = Math.min(state.wood, state.fireMaxFuel-state.fireFuel, 3);
-        state.wood -= add;
-        state.fireFuel += add;
-        state.log = "You add wood to the fire.";
-        let fillPercent = (state.fireFuel / state.fireMaxFuel) * 100;
-        let before = state.fireLevel;
-        let gain = Math.round(add / state.fireMaxFuel * fireLevelMax);
-        state.fireLevel += gain;
-        if (state.fireLevel >= fireLevelMax) {
-          let carry = state.fireLevel - fireLevelMax;
-          expandMap();
-          state.fireLevel = carry;
+        function gtag() {
+            dataLayer.push(arguments);
         }
-      } else if (state.wood <= 0) {
-        state.log = "You have no wood to fuel the fire!";
-      } else {
-        state.log = "The fire is fully fueled!";
-      }
-      renderUI();
-      return;
-    }
-    if(state.food > 0 && state.health < 10) {
-      state.food--;
-      state.health++;
-      state.log="You eat some food and regain health.";
-      renderUI();
-    }
-  }
+        gtag('js', new Date());
+        gtag('config', 'G-');
+    </script>
+<meta charset="UTF-8">
+<meta http-equiv="origin-trial" content="ArNPSFm7gVG988ErBulTuZ21VM9sMvN4G90SgXXCOOzf2rbY0PLmI/DYkgEiEZZxC3zIqUIf3NInHkZoSvutyAIAAAB7eyJvcmlnaW4iOiJodHRwczovL2VhZ2xlcmNyYWZ0LmNvbTo0NDMiLCJmZWF0dXJlIjoiV2ViQXNzZW1ibHlKU1Byb21pc2VJbnRlZ3JhdGlvbiIsImV4cGlyeSI6MTc0NDY3NTIwMCwiaXNTdWJkb21haW4iOnRydWV9">
+<meta http-equiv="origin-trial" content="A6nEkkcO9G/wqamPSME1dPmkGL/GvlLLPuW8lI1WBBHX/LCCvJdNYA/nicSPw/9kLEqq9QVv4g0SQL/xdbU8p2oAAAB7eyJvcmlnaW4iOiJodHRwczovL2VhZ2xlcmNyYWZ0LmNvbTo0NDMiLCJmZWF0dXJlIjoiV2ViQXNzZW1ibHlKU1Byb21pc2VJbnRlZ3JhdGlvbiIsImV4cGlyeSI6MTczODEzNTMwNCwiaXNTdWJkb21haW4iOnRydWV9">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0">
+<title>Minecraft 1.12.2</title>
+<script type="text/javascript">
+window.addEventListener("load", function() {
+	if((typeof WebAssembly !== "undefined") && (typeof WebAssembly.Suspending !== "undefined")) {
+		try {
+			if("true" === window.localStorage.getItem("hideEaglerWASMAvailable")) {
+				return;
+			}
+		}catch(ex) {
+		}
+		var el = document.getElementById("eaglerWASMAvailable");
+		var chkbox = document.getElementById("eaglerWASMAvailableDontShow");
+		function handleDontShow() {
+			if(chkbox.checked) {
+				try {
+					window.localStorage.setItem("hideEaglerWASMAvailable", "true");
+				}catch(ex) {
+				}
+			}
+		}
+		el.style.display = "block";
+		document.getElementById("eaglerWASMAvailableYes").addEventListener("click", function() {
+			handleDontShow();
+			document.location.href = "https://eaglercraft.com/mc/1.12.2-wasm/";
+		});
+		document.getElementById("eaglerWASMAvailableNo").addEventListener("click", function() {
+			handleDontShow();
+			el.style.display = "none";
+		});
+	}
 });
-
-window.addEventListener("keyup", function(e){
-  state.keys[e.key] = false;
-});
-
-document.getElementById("restartBtn").onclick = ()=>{ startGame(); };
-
-function switchPhase() {
-  if (!state.alive) return;
-  if (state.phase === "day") {
-    startNight();
-  } else {
-    endNight();
-  }
-}
-
-function gameLoop() {
-  if (state.phase === "day" || state.phase === "night") {
-    updatePlayer();
-  }
-  let burnRate = state.phase === "night" ? fireBurnRateNight : fireBurnRateDay;
-  if (state.fireFuel > 0) {
-    state.fireFuel = Math.max(0, state.fireFuel - burnRate);
-    state.fireActive = true;
-  } else {
-    state.fireActive = false;
-    if (state.phase === "night" && state.alive) {
-      state.phaseTicks++;
-      if (state.phaseTicks % 60 === 0) {
-        state.health--;
-        state.log = "<span style='color:#ffb347'>The cold bites you as the fire dies...</span>";
-        renderUI();
-        if(state.health<=0) {
-          state.alive = false;
-          state.log = "<span style='color:#ff8888'><b>You died from the cold! Game over.</b></span>";
-        }
-      }
-    }
-  }
-  render();
-  renderUI();
-  requestAnimationFrame(gameLoop);
-}
-
-function startNight() {
-  state.phase = "night";
-  state.phaseTicks = 0;
-  state.log = "Night falls! Keep the fire burning!";
-  renderUI();
-}
-
-function endNight() {
-  state.phase = "day";
-  state.night++;
-  if(state.night > state.maxNights) {
-    state.alive = false;
-    state.log = "<span style='color:#aaffaa'><b>Congratulations! You survived all 99 nights!</b></span>";
-    renderUI();
-    clearInterval(state.phaseInterval);
-    return;
-  }
-  spawnResources();
-  state.log = `A new day dawns. Night ${state.night} begins.`;
-  state.fireFuel = Math.max(3, state.fireFuel);
-  renderUI();
-}
-
-function expandMap() {
-  state.fireLevelUps++;
-  mapW += mapGrowW;
-  mapH += mapGrowH;
-  state.fireMaxFuel += 5;
-  state.fireFuel = Math.min(state.fireFuel, state.fireMaxFuel);
-  recalcMap();
-  firePos.x = Math.floor(mapW/2);
-  firePos.y = Math.floor(mapH/2);
-  state.player.x = firePos.x * tileSize + tileSize/2;
-  state.player.y = (firePos.y+2) * tileSize + tileSize/2;
-  spawnResources();
-  state.log = `<span style='color:#ffd166'><b>Your fire reached 100%! The map expands!</b></span>`;
-}
-
-function startPhaseTimer() {
-  if (state.phaseInterval) clearInterval(state.phaseInterval);
-  state.phaseInterval = setInterval(switchPhase, PHASE_DURATION_MS);
-}
-
-function startGame() {
-  state = createInitialState();
-  spawnResources();
-  state.log = "Survive for 99 nights! Gather wood to fuel your fire.";
-  render();
-  renderUI();
-  startPhaseTimer();
-}
-startGame();
-gameLoop();
 </script>
+<script type="text/javascript">
+window.disableUserscripts = true;
+window.__eaglercraftLoaderClient = {
+	container: "game_frame",
+	name: "Eaglercraft 1.12",
+	file: "net.peytonplayz585.eaglercraft.v1_12.client",
+	cid: "bafybeidrnchyech7b26rqhm3tayt7p6mxvl23lzd4f5mcyqda7hbrzyal4",
+	path: "",
+	download: "https://cdn.jsdelivr.net/gh/genizy/mc@main/data/1.12.2.gz",
+	dlSize: 15601341,
+	gzip: true
+};
+</script>
+<script type="text/javascript" src="https://cdn.jsdelivr.net/gh/genizy/mc@main/shared/loader.js"></script>
+<link type="image/png" rel="shortcut icon" href="https://cdn.jsdelivr.net/gh/genizy/mc@main/shared/game.png" />
+</head>
+<body style="margin:0px;width:100%;height:100%;overflow:hidden;background-color:white;">
+<div id="eaglerWASMAvailable" style="display:none;position:absolute;left:0px;top:0px;right:0px;z-index:1000;">
+<div style="margin:auto;max-width:650px;">
+<div style="margin:20px;border:5px double black;padding:10px;background-color:white;text-align:center;font-family:sans-serif;font-size:1.2em;">
+<h3>Eaglercraft WebAssembly GC is supported on your browser, would you like to try it?</h3>
+<p>The new variant of Eaglercraft gets almost <b>2x the FPS</b>, however it may crash if your device doesn't have a lot of memory</p>
+<p>Your existing singleplayer worlds will be available</p>
+<h4><input type="checkbox" style="zoom:1.5;" id="eaglerWASMAvailableDontShow"> Do not show again</h4>
+<p><button id="eaglerWASMAvailableYes" style="zoom:1.5;">Switch to WebAssembly version</button></p>
+<p><button id="eaglerWASMAvailableNo" style="zoom:1.5;">Keep using JavaScript version</button></p>
+</div>
+</div>
+</div>
+<div id="game_frame" style="width:100%;height:100%;"></div>
 </body>
 </html>
